@@ -57,9 +57,7 @@ def _load_and_split() -> Dict[str, List[Dict]]:
     return buckets
 
 
-print("Loading Spider dataset...")
-_ALL_TASKS = _load_and_split()
-print(f"Loaded: easy={len(_ALL_TASKS['easy'])}, medium={len(_ALL_TASKS['medium'])}, hard={len(_ALL_TASKS['hard'])}")
+_ALL_TASKS: Dict[str, List[Dict]] = {}  # populated lazily on first use
 
 
 # ---------------------------------------------------------------------------
@@ -167,17 +165,19 @@ _DB_SCHEMAS: Dict[str, str] = {
 }
 
 _KNOWN_DBS = frozenset(_DB_SCHEMAS)
-
-# Filter to only tasks whose DB we have a schema for, then free the full list
-_TASKS: Dict[str, List[Dict]] = {
-    diff: [t for t in tasks if t["db_id"] in _KNOWN_DBS]
-    for diff, tasks in _ALL_TASKS.items()
-}
-del _ALL_TASKS  # free ~7000 rows we no longer need
-
-print(f"Filtered: easy={len(_TASKS['easy'])}, medium={len(_TASKS['medium'])}, hard={len(_TASKS['hard'])}")
-
+_TASKS: Dict[str, List[Dict]] = {}  # populated lazily
 _MAX_ATTEMPTS = {"easy": 3, "medium": 4, "hard": 5}
+
+
+def _ensure_tasks_loaded() -> None:
+    """Load and filter Spider tasks on first call; no-op afterwards."""
+    if _TASKS:
+        return
+    print("Loading Spider dataset...")
+    all_tasks = _load_and_split()
+    for diff, tasks in all_tasks.items():
+        _TASKS[diff] = [t for t in tasks if t["db_id"] in _KNOWN_DBS]
+    print(f"Loaded: easy={len(_TASKS['easy'])}, medium={len(_TASKS['medium'])}, hard={len(_TASKS['hard'])}")
 
 # Schema strings shown to the agent (CREATE TABLE only, no INSERT noise)
 _SCHEMA_DISPLAY: Dict[str, str] = {
@@ -302,6 +302,7 @@ class SQLEnvironment(Environment):
         self._state      = SQLState(episode_id=str(uuid.uuid4()), step_count=0)
 
     def reset(self, task_id: str = "easy", seed: Optional[int] = None, **kwargs) -> SQLObservation:
+        _ensure_tasks_loaded()
         if task_id not in _TASKS or not _TASKS[task_id]:
             task_id = "easy"
 
@@ -357,6 +358,7 @@ class SQLEnvironment(Environment):
         return self._best_score
 
     def get_tasks(self) -> List[Dict]:
+        _ensure_tasks_loaded()
         return [
             {
                 "task_id": tid,

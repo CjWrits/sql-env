@@ -33,13 +33,9 @@ app: FastAPI = create_app(
     env_name="sql_env", max_concurrent_envs=100,
 )
 
-# Single shared instance only for /tasks — no dataset reload
-_task_list = SQLEnvironment().get_tasks()
-
-
 @app.get("/tasks")
 async def list_tasks():
-    return JSONResponse(_task_list)
+    return JSONResponse(SQLEnvironment().get_tasks())
 
 
 @app.post("/grader")
