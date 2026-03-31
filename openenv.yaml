@@ -1,0 +1,36 @@
+spec_version: 1
+name: sql_env
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+description: >
+  A real-world SQL query writing environment. The agent receives a natural
+  language question and a database schema from the Spider benchmark, and must
+  write a correct SQL SELECT query. Graded by executing both queries against
+  an in-memory SQLite database and comparing result sets.
+tags:
+  - openenv
+  - sql
+  - real-world
+  - spider
+env:
+  - name: API_BASE_URL
+    description: LLM API endpoint
+    required: true
+  - name: MODEL_NAME
+    description: Model identifier
+    required: true
+  - name: HF_TOKEN
+    description: API key
+    required: true
+tasks:
+  - id: easy
+    difficulty: easy
+    description: Single table SELECT with WHERE / ORDER BY / COUNT
+  - id: medium
+    difficulty: medium
+    description: Two-table JOIN query
+  - id: hard
+    difficulty: hard
+    description: Subquery, GROUP BY + HAVING, or UNION
