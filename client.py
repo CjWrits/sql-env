@@ -3,7 +3,10 @@
 from typing import Dict
 from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
-from .models import SQLAction, SQLObservation, SQLState
+try:
+    from .models import SQLAction, SQLObservation, SQLState
+except ImportError:
+    from models import SQLAction, SQLObservation, SQLState
 
 
 class SQLEnv(EnvClient[SQLAction, SQLObservation, SQLState]):
