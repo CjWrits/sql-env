@@ -2,8 +2,8 @@
 inference.py — Baseline inference for the SQL Query Environment.
 
 Environment variables:
-  API_BASE_URL  — LLM API endpoint  (default: https://api.openai.com/v1)
-  MODEL_NAME    — model identifier   (default: gpt-4o-mini)
+  API_BASE_URL  — LLM API endpoint  (default: https://router.huggingface.co/v1)
+  MODEL_NAME    — model identifier   (default: meta-llama/Llama-3.1-8B-Instruct)
   HF_TOKEN      — API key            (required)
 
 Usage:
@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import sys
 
@@ -51,13 +52,17 @@ def _get_llm_client() -> OpenAI:
 
 
 def run_task(llm: OpenAI, env, task_id: str) -> float:
-    print(f"\n--- Task: {task_id} ---")
-
     result = env.reset(task_id=task_id, seed=7)
     obs = result.observation
 
-    print(f"  DB      : {obs.db_id}")
-    print(f"  Question: {obs.question}")
+    # [START] log
+    print(json.dumps({
+        "type": "START",
+        "task_id": task_id,
+        "db_id": obs.db_id,
+        "question": obs.question,
+        "max_attempts": obs.max_attempts,
+    }))
 
     history = [{"role": "system", "content": SYSTEM_PROMPT}]
     final_score = 0.0
@@ -80,18 +85,32 @@ def run_task(llm: OpenAI, env, task_id: str) -> float:
             )
             query = _parse_query(completion.choices[0].message.content)
         except Exception as exc:
-            print(f"  Attempt {attempt}: LLM error — {exc}")
+            print(json.dumps({
+                "type": "STEP",
+                "task_id": task_id,
+                "attempt": attempt,
+                "query": None,
+                "feedback": f"LLM error: {exc}",
+                "reward": 0.0,
+                "done": True,
+            }))
             break
-
-        print(f"  Attempt {attempt}: {query[:100]}")
 
         from models import SQLAction
         result = env.step(SQLAction(query=query))
         obs  = result.observation
         done = result.done
 
-        print(f"    Feedback : {obs.feedback}")
-        print(f"    Done     : {done}")
+        # [STEP] log
+        print(json.dumps({
+            "type": "STEP",
+            "task_id": task_id,
+            "attempt": attempt,
+            "query": query,
+            "feedback": obs.feedback,
+            "reward": result.reward,
+            "done": done,
+        }))
 
         if done:
             final_score = result.reward or 0.0
@@ -99,7 +118,13 @@ def run_task(llm: OpenAI, env, task_id: str) -> float:
 
         history.append({"role": "assistant", "content": query})
 
-    print(f"  Final score: {final_score:.4f}")
+    # [END] log
+    print(json.dumps({
+        "type": "END",
+        "task_id": task_id,
+        "score": final_score,
+    }))
+
     return float(final_score)
 
 
@@ -113,10 +138,11 @@ def main(base_url: str) -> None:
         with SQLEnv(base_url=base_url).sync() as env:
             scores[task_id] = run_task(llm, env, task_id)
 
-    print("\n=== Inference Results ===")
-    for tid, score in scores.items():
-        print(f"  {tid:8s}: {score:.4f}")
-    print(f"  average : {sum(scores.values()) / len(scores):.4f}")
+    print(json.dumps({
+        "type": "RESULTS",
+        "scores": scores,
+        "average": sum(scores.values()) / len(scores),
+    }))
 
 
 if __name__ == "__main__":
