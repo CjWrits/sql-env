@@ -35,7 +35,22 @@ app: FastAPI = create_app(
 
 @app.get("/tasks")
 async def list_tasks():
-    return JSONResponse(SQLEnvironment().get_tasks())
+    _ensure_tasks_loaded()
+    return JSONResponse([
+        {
+            "task_id": tid,
+            "difficulty": tid,
+            "description": desc,
+            "max_attempts": _MAX_ATTEMPTS[tid],
+            "action_schema": {"query": "str — a valid SQL SELECT statement"},
+            "example_question": _TASKS[tid][0]["question"] if _TASKS[tid] else "",
+        }
+        for tid, desc in {
+            "easy":   "Single table SELECT with WHERE / ORDER BY / COUNT.",
+            "medium": "JOIN across two tables.",
+            "hard":   "Subquery, GROUP BY + HAVING, UNION, or INTERSECT.",
+        }.items()
+    ])
 
 
 @app.post("/grader")
