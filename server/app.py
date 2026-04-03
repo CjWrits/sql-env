@@ -149,6 +149,7 @@ async def baseline(request: Request):
 
 
 def main(host: str = "0.0.0.0", port: int = 8000):
+    """Entry point — call main() to start the server with defaults."""
     import uvicorn
     uvicorn.run(app, host=host, port=port)
 
