@@ -66,8 +66,8 @@ async def baseline(request: Request):
     Reads API_BASE_URL, MODEL_NAME, HF_TOKEN from environment.
     """
     hf_token     = os.environ.get("HF_TOKEN", "")
-    api_base_url = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
-    model_name   = os.environ.get("MODEL_NAME", "gpt-4o-mini")
+    api_base_url = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+    model_name   = os.environ.get("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
 
     if not hf_token:
         return JSONResponse({"error": "HF_TOKEN not set"}, status_code=400)
