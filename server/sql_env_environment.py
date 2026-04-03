@@ -274,13 +274,13 @@ def grade_query(
         overlap = len(gold_set & agent_set) / len(gold_set)
         if overlap > 0:
             return round(overlap * 0.5, 4), (
-                f"Partial: {len(gold_set & agent_set)}/{len(gold_set)} expected rows matched. "
-                f"Expected {len(gold_norm)} rows, got {len(agent_norm)}."
+                f"Partial match: {len(gold_set & agent_set)}/{len(gold_set)} expected rows matched. "
+                f"Expected {len(gold_norm)} row(s), got {len(agent_norm)}. Check your WHERE clause or JOIN conditions."
             ), None
 
         return 0.0, (
             f"Wrong result. Expected {len(gold_norm)} row(s), got {len(agent_norm)}. "
-            f"Sample expected: {gold_norm[:2]}"
+            f"Double-check you are querying the correct table and columns."
         ), None
     finally:
         conn.close()

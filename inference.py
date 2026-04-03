@@ -28,7 +28,8 @@ SYSTEM_PROMPT = (
     "question, write a correct SQL SELECT query.\n"
     "Rules:\n"
     "- Only write SELECT queries\n"
-    "- Use exact table and column names from the schema\n"
+    "- Use ONLY the exact table and column names defined in the CREATE TABLE statements\n"
+    "- Read the schema carefully — use the table that directly stores the data being asked about\n"
     "- Return ONLY the SQL query — no explanation, no markdown fences"
 )
 
