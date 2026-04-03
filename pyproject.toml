@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-sql-env"
+version = "0.1.0"
+description = "SQL Query Writing environment for OpenEnv — powered by the Spider benchmark"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core[core]>=0.2.1",
+    "datasets>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "openai>=1.0.0",
+    "requests>=2.28.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+server = "sql_env.server.app:main"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["sql_env", "sql_env.server"]
+package-dir = { "sql_env" = ".", "sql_env.server" = "server" }
