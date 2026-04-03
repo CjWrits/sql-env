@@ -53,7 +53,7 @@ def _get_llm_client() -> OpenAI:
 def run_task(llm: OpenAI, env, task_id: str) -> float:
     print(f"\n--- Task: {task_id} ---")
 
-    result = env.reset(task_id=task_id, seed=42)
+    result = env.reset(task_id=task_id, seed=7)
     obs = result.observation
 
     print(f"  DB      : {obs.db_id}")
