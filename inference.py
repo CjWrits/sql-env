@@ -52,18 +52,21 @@ def log_start(task: str, env: str, model: str) -> None:
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
-    # keep action on one line, truncate if needed
     action_clean = action.replace("\n", " ").strip()
+    norm_reward = round(min(max(0.01 + reward * 0.98, 0.01), 0.99), 2)
     print(
-        f"[STEP] step={step} action={action_clean} reward={reward:.2f} done={done_val} error={error_val}",
+        f"[STEP] step={step} action={action_clean} reward={norm_reward:.2f} done={done_val} error={error_val}",
         flush=True,
     )
 
 
-def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    # Normalize rewards to strictly (0, 1) exclusive as required by validator
+    def _norm(r: float) -> float:
+        return round(min(max(0.01 + r * 0.98, 0.01), 0.99), 3)
+    rewards_str = ",".join(f"{_norm(r):.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -145,7 +148,11 @@ def run_task(llm: OpenAI, env, task_id: str) -> float:
         success = final_score >= 1.0
 
     finally:
-        log_end(success=success, steps=steps_taken, rewards=rewards)
+        # Normalize score to strictly (0, 1) as required by validator
+        # raw 0.0 → 0.01, raw 1.0 → 0.99, partial scores scale accordingly
+        normalized = 0.01 + (final_score * 0.98)
+        normalized = round(min(max(normalized, 0.01), 0.99), 3)
+        log_end(success=success, steps=steps_taken, score=normalized, rewards=rewards)
 
     return float(final_score)
 
