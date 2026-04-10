@@ -261,7 +261,7 @@ def grade_query(
         agent_norm = _normalise(agent_rows)
 
         if agent_norm == gold_norm:
-            return 1.0, "Correct! Your query produces the exact expected result.", None
+            return 0.99, "Correct! Your query produces the exact expected result.", None
 
         gold_set  = set(map(str, gold_norm))
         agent_set = set(map(str, agent_norm))
@@ -340,7 +340,7 @@ class SQLEnvironment(Environment):
 
         reward = round(score - self._best_score, 4)
         self._best_score = max(self._best_score, score)
-        done = (score == 1.0) or (self._attempt >= self._max_att)
+        done = (score >= 0.99) or (self._attempt >= self._max_att)
 
         return self._obs(
             done=done,
