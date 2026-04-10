@@ -79,7 +79,7 @@ def _parse_query(raw: str) -> str:
 def run_task(llm: OpenAI, env, task_id: str) -> float:
     from models import SQLAction
 
-    result = env.reset(task_id=task_id, seed=7)
+    result = env.reset(task_id=task_id)
     obs = result.observation
 
     log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
