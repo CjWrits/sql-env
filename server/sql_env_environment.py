@@ -290,7 +290,8 @@ def grade_query(
             msg = "Correct — expected empty result." if score == 0.95 else "Expected empty result but your query returned rows."
             return safe_score(score), msg, None
 
-        overlap = min(len(gold_set & agent_set) / len(gold_set), 1.0)  # Clamp overlap to [0, 1]
+        overlap = len(gold_set & agent_set) / len(gold_set)
+        overlap = min(max(overlap, 0.0), 1.0)  # Hard clamp to [0, 1]
         if overlap > 0:
             score = 0.02 + overlap * 0.93
             return safe_score(score), (

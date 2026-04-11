@@ -84,7 +84,7 @@ async def grader_score(request: Request):
         )
 
     score, feedback, error = grade_query(db_id, gold_query, agent_query)
-    return JSONResponse({"score": score, "feedback": feedback, "error": error})
+    return JSONResponse({"score": safe_score(score), "feedback": feedback, "error": error})
 
 
 @app.post("/baseline")
