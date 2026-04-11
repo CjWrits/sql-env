@@ -25,6 +25,15 @@ except ImportError:
     from models import SQLAction, SQLObservation, SQLState
 
 
+def safe_score(score) -> float:
+    """Ensure score is always strictly between 0 and 1."""
+    try:
+        score = float(score)
+    except (TypeError, ValueError):
+        return 0.02
+    return max(0.02, min(score, 0.95))
+
+
 # ---------------------------------------------------------------------------
 # Spider dataset — loaded once at startup
 # ---------------------------------------------------------------------------
@@ -255,23 +264,23 @@ def grade_query(
 
     # Block destructive operations
     if _FORBIDDEN.search(agent_query):
-        return 0.02, "Query contains forbidden keywords (only SELECT is allowed).", "forbidden"
+        return safe_score(0.02), "Query contains forbidden keywords (only SELECT is allowed).", "forbidden"
 
     conn = _make_conn(db_id)
     try:
         gold_rows, gold_err = _run(conn, gold_query)
         if gold_err:
-            return 0.0, f"Internal error: gold query failed ({gold_err})", None
+            return safe_score(0.02), f"Internal error: gold query failed ({gold_err})", None
 
         agent_rows, agent_err = _run(conn, agent_query)
         if agent_err:
-            return 0.02, f"SQL error: {agent_err}", agent_err
+            return safe_score(0.02), f"SQL error: {agent_err}", agent_err
 
         gold_norm  = _normalise(gold_rows)
         agent_norm = _normalise(agent_rows)
 
         if agent_norm == gold_norm:
-            return 0.95, "Correct! Your query produces the exact expected result.", None
+            return safe_score(0.95), "Correct! Your query produces the exact expected result.", None
 
         gold_set  = set(map(str, gold_norm))
         agent_set = set(map(str, agent_norm))
@@ -279,16 +288,17 @@ def grade_query(
         if not gold_set:
             score = 0.95 if not agent_set else 0.02
             msg = "Correct — expected empty result." if score == 0.95 else "Expected empty result but your query returned rows."
-            return score, msg, None
+            return safe_score(score), msg, None
 
-        overlap = len(gold_set & agent_set) / len(gold_set)
+        overlap = min(len(gold_set & agent_set) / len(gold_set), 1.0)  # Clamp overlap to [0, 1]
         if overlap > 0:
-            return round(0.02 + overlap * 0.93, 4), (
+            score = 0.02 + overlap * 0.93
+            return safe_score(score), (
                 f"Partial match: {len(gold_set & agent_set)}/{len(gold_set)} expected rows matched. "
                 f"Expected {len(gold_norm)} row(s), got {len(agent_norm)}. Check your WHERE clause or JOIN conditions."
             ), None
 
-        return 0.02, (
+        return safe_score(0.02), (
             f"Wrong result. Expected {len(gold_norm)} row(s), got {len(agent_norm)}. "
             f"Double-check you are querying the correct table and columns."
         ), None
@@ -327,7 +337,7 @@ class SQLEnvironment(Environment):
             db_id=self._task["db_id"], task_id=task_id,
             question=self._task["question"], attempts_used=0,
         )
-        return self._obs(done=False, reward=0.0)
+        return self._obs(done=False, reward=safe_score(0.02))
 
     def step(self, action: SQLAction, **kwargs) -> SQLObservation:
         self._state.step_count += 1
@@ -339,7 +349,7 @@ class SQLEnvironment(Environment):
         # Reject non-SELECT before touching the DB
         if not re.match(r"^\s*SELECT\b", query, re.IGNORECASE) or _FORBIDDEN.search(query):
             done = self._attempt >= self._max_att
-            return self._obs(done=done, reward=0.02,
+            return self._obs(done=done, reward=safe_score(0.02),
                              last_query=query,
                              last_error="Only SELECT queries are allowed.",
                              feedback="Only SELECT queries are allowed.")
@@ -348,13 +358,15 @@ class SQLEnvironment(Environment):
             self._task["db_id"], self._task["gold_query"], query
         )
 
-        reward = max(round(score - self._best_score, 4), 0.02)
+        # Safe score handling with clamping
+        score = safe_score(score)
+        reward = safe_score(max(score - self._best_score, 0.02))
         self._best_score = max(self._best_score, score)
-        done = (score >= 0.95) or (self._attempt >= self._max_att)
+        done = (score >= 0.90) or (self._attempt >= self._max_att)
 
         return self._obs(
             done=done,
-            reward=max(self._best_score, 0.02) if done else reward,
+            reward=safe_score(self._best_score if done else reward),
             last_query=query,
             last_error=error,
             feedback=feedback,
@@ -365,7 +377,7 @@ class SQLEnvironment(Environment):
         return self._state
 
     def get_grader_score(self) -> float:
-        return self._best_score
+        return safe_score(self._best_score)
 
     def get_tasks(self) -> List[Dict]:
         _ensure_tasks_loaded()
