@@ -15,6 +15,7 @@ import random
 import re
 import sqlite3
 import uuid
+import math
 from typing import Dict, List, Optional, Tuple
 
 from openenv.core.env_server.interfaces import Environment
@@ -29,6 +30,8 @@ def safe_score(score) -> float:
     """Ensure score is always strictly between 0 and 1."""
     try:
         score = float(score)
+        if math.isnan(score) or math.isinf(score):
+            return 0.02
     except (TypeError, ValueError):
         return 0.02
     return max(0.02, min(score, 0.95))
@@ -290,7 +293,9 @@ def grade_query(
             msg = "Correct — expected empty result." if score == 0.95 else "Expected empty result but your query returned rows."
             return safe_score(score), msg, None
 
-        overlap = len(gold_set & agent_set) / len(gold_set)
+        overlap = 0.0
+        if len(gold_set) > 0:
+            overlap = len(gold_set & agent_set) / len(gold_set)
         overlap = min(max(overlap, 0.0), 1.0)  # Hard clamp to [0, 1]
         if overlap > 0:
             score = 0.02 + overlap * 0.93
@@ -365,9 +370,12 @@ class SQLEnvironment(Environment):
         self._best_score = max(self._best_score, score)
         done = (score >= 0.90) or (self._attempt >= self._max_att)
 
+        # Final guard on reward
+        reward = safe_score(reward)
+
         return self._obs(
             done=done,
-            reward=safe_score(self._best_score if done else reward),
+            reward=reward,
             last_query=query,
             last_error=error,
             feedback=feedback,

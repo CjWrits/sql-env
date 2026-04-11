@@ -22,6 +22,7 @@ import argparse
 import os
 import sys
 import re
+import math
 from typing import List, Optional
 
 from dotenv import load_dotenv
@@ -40,6 +41,8 @@ def safe_score(score) -> float:
     """Ensure score is always strictly between 0 and 1."""
     try:
         score = float(score)
+        if math.isnan(score) or math.isinf(score):
+            return 0.02
     except (TypeError, ValueError):
         return 0.02
     return max(0.02, min(score, 0.95))
