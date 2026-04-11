@@ -202,18 +202,28 @@ _FORBIDDEN = re.compile(
 def _make_conn(db_id: str) -> sqlite3.Connection:
     """Build a fresh in-memory SQLite connection for db_id."""
     conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(_DB_SCHEMAS[db_id])
-    conn.commit()
-    return conn
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.executescript(_DB_SCHEMAS[db_id])
+        conn.commit()
+        return conn
+    except Exception:
+        conn.close()
+        raise
 
 
 def _run(conn: sqlite3.Connection, query: str) -> Tuple[Optional[List], Optional[str]]:
+    """Execute query and return results with proper resource cleanup."""
+    cursor = None
     try:
-        rows = [tuple(r) for r in conn.execute(query).fetchall()]
+        cursor = conn.execute(query)
+        rows = [tuple(r) for r in cursor.fetchall()]
         return rows, None
     except Exception as exc:
         return None, str(exc)
+    finally:
+        if cursor is not None:
+            cursor.close()
 
 
 def _normalise(rows: List) -> List:
@@ -245,7 +255,7 @@ def grade_query(
 
     # Block destructive operations
     if _FORBIDDEN.search(agent_query):
-        return 0.0, "Query contains forbidden keywords (only SELECT is allowed).", "forbidden"
+        return 0.01, "Query contains forbidden keywords (only SELECT is allowed).", "forbidden"
 
     conn = _make_conn(db_id)
     try:
@@ -255,7 +265,7 @@ def grade_query(
 
         agent_rows, agent_err = _run(conn, agent_query)
         if agent_err:
-            return 0.0, f"SQL error: {agent_err}", agent_err
+            return 0.01, f"SQL error: {agent_err}", agent_err
 
         gold_norm  = _normalise(gold_rows)
         agent_norm = _normalise(agent_rows)
@@ -267,18 +277,18 @@ def grade_query(
         agent_set = set(map(str, agent_norm))
 
         if not gold_set:
-            score = 1.0 if not agent_set else 0.0
-            msg = "Correct — expected empty result." if score == 1.0 else "Expected empty result but your query returned rows."
+            score = 0.99 if not agent_set else 0.01
+            msg = "Correct — expected empty result." if score == 0.99 else "Expected empty result but your query returned rows."
             return score, msg, None
 
         overlap = len(gold_set & agent_set) / len(gold_set)
         if overlap > 0:
-            return round(overlap * 0.5, 4), (
+            return round(0.01 + overlap * 0.48, 4), (
                 f"Partial match: {len(gold_set & agent_set)}/{len(gold_set)} expected rows matched. "
                 f"Expected {len(gold_norm)} row(s), got {len(agent_norm)}. Check your WHERE clause or JOIN conditions."
             ), None
 
-        return 0.0, (
+        return 0.01, (
             f"Wrong result. Expected {len(gold_norm)} row(s), got {len(agent_norm)}. "
             f"Double-check you are querying the correct table and columns."
         ), None
@@ -329,7 +339,7 @@ class SQLEnvironment(Environment):
         # Reject non-SELECT before touching the DB
         if not re.match(r"^\s*SELECT\b", query, re.IGNORECASE) or _FORBIDDEN.search(query):
             done = self._attempt >= self._max_att
-            return self._obs(done=done, reward=-0.1,
+            return self._obs(done=done, reward=0.01,
                              last_query=query,
                              last_error="Only SELECT queries are allowed.",
                              feedback="Only SELECT queries are allowed.")
@@ -338,13 +348,13 @@ class SQLEnvironment(Environment):
             self._task["db_id"], self._task["gold_query"], query
         )
 
-        reward = round(score - self._best_score, 4)
+        reward = max(round(score - self._best_score, 4), 0.01)
         self._best_score = max(self._best_score, score)
         done = (score >= 0.99) or (self._attempt >= self._max_att)
 
         return self._obs(
             done=done,
-            reward=self._best_score if done else reward,
+            reward=max(self._best_score, 0.01) if done else reward,
             last_query=query,
             last_error=error,
             feedback=feedback,

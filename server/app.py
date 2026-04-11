@@ -8,12 +8,16 @@ FastAPI app for the SQL Query Environment.
 
 import os
 import random
+import logging
+import re
 
 from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+
+logging.basicConfig(level=logging.INFO)
 
 try:
     from openenv.core.env_server.http_server import create_app
@@ -90,8 +94,10 @@ async def baseline(request: Request):
     body = {}
     try:
         body = await request.json()
-    except Exception:
-        pass
+    except ValueError as e:
+        logging.warning(f"Invalid JSON in request body: {e}")
+    except Exception as e:
+        logging.exception(f"Unexpected error parsing request body: {e}")
 
     model = body.get("model", model_name)
     seed  = body.get("seed", 42)
@@ -130,22 +136,64 @@ async def baseline(request: Request):
                 max_tokens=256,
             )
             raw = resp.choices[0].message.content.strip()
-            # Strip markdown fences if present
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.lower().startswith("sql"):
-                    raw = raw[3:]
-            query = raw.strip()
+            
+            # Sanitize LLM output - only allow SQL queries
+            query = _sanitize_sql_output(raw)
 
             score, feedback, _ = grade_query(task["db_id"], task["gold_query"], query)
             results[task_id] = {
                 "score": score, "model": model, "status": "ok",
                 "question": task["question"], "query": query, "feedback": feedback,
             }
+        except ValueError as e:
+            logging.error(f"Invalid LLM output for task {task_id}: {e}")
+            results[task_id] = {"score": 0.0, "model": model, "status": f"validation_error: {str(e)}"}
         except Exception as exc:
-            results[task_id] = {"score": 0.0, "model": model, "status": f"error: {exc}"}
+            logging.exception(f"Error processing task {task_id}: {exc}")
+            results[task_id] = {"score": 0.0, "model": model, "status": f"error: {str(exc)}"}
 
     return JSONResponse({"baseline_scores": results})
+
+
+def _sanitize_sql_output(raw: str) -> str:
+    """
+    Sanitize LLM output to prevent injection attacks.
+    Only allows valid SQL SELECT queries.
+    """
+    raw = raw.strip()
+    
+    # Remove markdown code fences
+    if raw.startswith("```"):
+        parts = raw.split("```")
+        if len(parts) > 1:
+            raw = parts[1]
+            if raw.lower().startswith("sql"):
+                raw = raw[3:]
+    
+    query = raw.strip()
+    
+    # Validate: must start with SELECT
+    if not re.match(r'^\s*SELECT\b', query, re.IGNORECASE):
+        raise ValueError("Query must start with SELECT")
+    
+    # Block dangerous SQL keywords
+    forbidden = re.compile(
+        r'\b(DROP|DELETE|INSERT|UPDATE|ALTER|CREATE|TRUNCATE|REPLACE|'
+        r'ATTACH|DETACH|PRAGMA|EXEC|EXECUTE|SCRIPT|LOAD_FILE|INTO\s+OUTFILE|'
+        r'INTO\s+DUMPFILE|LOAD\s+DATA)\b',
+        re.IGNORECASE
+    )
+    if forbidden.search(query):
+        raise ValueError("Query contains forbidden SQL keywords")
+    
+    # Limit query length to prevent DoS
+    if len(query) > 2000:
+        raise ValueError("Query exceeds maximum length")
+    
+    # Remove any null bytes or control characters
+    query = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', query)
+    
+    return query
 
 
 def main(host: str = "0.0.0.0", port: int = 8000):

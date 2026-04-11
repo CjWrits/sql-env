@@ -21,6 +21,7 @@ Usage:
 import argparse
 import os
 import sys
+import re
 from typing import List, Optional
 
 from dotenv import load_dotenv
@@ -68,12 +69,44 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
 
 
 def _parse_query(raw: str) -> str:
+    """
+    Parse and sanitize LLM output to extract SQL query.
+    Validates output to prevent injection attacks.
+    """
     raw = raw.strip()
+    
+    # Remove markdown code fences
     if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.lower().startswith("sql"):
-            raw = raw[3:]
-    return raw.strip()
+        parts = raw.split("```")
+        if len(parts) > 1:
+            raw = parts[1]
+            if raw.lower().startswith("sql"):
+                raw = raw[3:]
+    
+    query = raw.strip()
+    
+    # Validate: must start with SELECT
+    if not re.match(r'^\s*SELECT\b', query, re.IGNORECASE):
+        raise ValueError("Query must start with SELECT")
+    
+    # Block dangerous SQL keywords
+    forbidden = re.compile(
+        r'\b(DROP|DELETE|INSERT|UPDATE|ALTER|CREATE|TRUNCATE|REPLACE|'
+        r'ATTACH|DETACH|PRAGMA|EXEC|EXECUTE|SCRIPT|LOAD_FILE|INTO\s+OUTFILE|'
+        r'INTO\s+DUMPFILE|LOAD\s+DATA)\b',
+        re.IGNORECASE
+    )
+    if forbidden.search(query):
+        raise ValueError("Query contains forbidden SQL keywords")
+    
+    # Limit query length to prevent DoS
+    if len(query) > 2000:
+        raise ValueError("Query exceeds maximum length")
+    
+    # Remove any null bytes or control characters
+    query = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', query)
+    
+    return query
 
 
 def run_task(llm: OpenAI, env, task_id: str) -> float:
