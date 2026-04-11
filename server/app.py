@@ -26,10 +26,10 @@ except Exception as e:
 
 try:
     from models import SQLAction, SQLObservation
-    from server.sql_env_environment import SQLEnvironment, grade_query, _TASKS, _SCHEMA_DISPLAY, _MAX_ATTEMPTS
+    from server.sql_env_environment import SQLEnvironment, grade_query, _TASKS, _SCHEMA_DISPLAY, _MAX_ATTEMPTS, _ensure_tasks_loaded
 except ModuleNotFoundError:
     from ..models import SQLAction, SQLObservation
-    from .sql_env_environment import SQLEnvironment, grade_query, _TASKS, _SCHEMA_DISPLAY, _MAX_ATTEMPTS
+    from .sql_env_environment import SQLEnvironment, grade_query, _TASKS, _SCHEMA_DISPLAY, _MAX_ATTEMPTS, _ensure_tasks_loaded
 
 
 app: FastAPI = create_app(
