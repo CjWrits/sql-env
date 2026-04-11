@@ -19,6 +19,15 @@ from fastapi.responses import JSONResponse
 
 logging.basicConfig(level=logging.INFO)
 
+
+def safe_score(score) -> float:
+    """Ensure score is always strictly between 0 and 1."""
+    try:
+        score = float(score)
+    except (TypeError, ValueError):
+        return 0.02
+    return max(0.02, min(score, 0.95))
+
 try:
     from openenv.core.env_server.http_server import create_app
 except Exception as e:
@@ -116,7 +125,7 @@ async def baseline(request: Request):
     for task_id in ("easy", "medium", "hard"):
         tasks = _TASKS.get(task_id, [])
         if not tasks:
-            results[task_id] = {"score": 0.0, "status": "no tasks available"}
+            results[task_id] = {"score": safe_score(0.02), "status": "no tasks available"}
             continue
 
         task   = rng.choice(tasks)
@@ -142,15 +151,15 @@ async def baseline(request: Request):
 
             score, feedback, _ = grade_query(task["db_id"], task["gold_query"], query)
             results[task_id] = {
-                "score": score, "model": model, "status": "ok",
+                "score": safe_score(score), "model": model, "status": "ok",
                 "question": task["question"], "query": query, "feedback": feedback,
             }
         except ValueError as e:
             logging.error(f"Invalid LLM output for task {task_id}: {e}")
-            results[task_id] = {"score": 0.0, "model": model, "status": f"validation_error: {str(e)}"}
+            results[task_id] = {"score": safe_score(0.02), "model": model, "status": f"validation_error: {str(e)}"}
         except Exception as exc:
             logging.exception(f"Error processing task {task_id}: {exc}")
-            results[task_id] = {"score": 0.0, "model": model, "status": f"error: {str(exc)}"}
+            results[task_id] = {"score": safe_score(0.02), "model": model, "status": f"error: {str(exc)}"}
 
     return JSONResponse({"baseline_scores": results})
 

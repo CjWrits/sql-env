@@ -260,7 +260,7 @@ def grade_query(
     Returns (score 0.0–1.0, feedback, sql_error_or_None).
     """
     if db_id not in _DB_SCHEMAS:
-        return 0.0, f"Unknown database: {db_id}", None
+        return safe_score(0.02), f"Unknown database: {db_id}", None
 
     # Block destructive operations
     if _FORBIDDEN.search(agent_query):
@@ -318,7 +318,7 @@ class SQLEnvironment(Environment):
         self._task       : Dict = {}
         self._attempt    = 0
         self._max_att    = 3
-        self._best_score = 0.0
+        self._best_score = 0.02
         self._state      = SQLState(episode_id=str(uuid.uuid4()), step_count=0)
 
     def reset(self, task_id: str = "easy", seed: Optional[int] = None, **kwargs) -> SQLObservation:
@@ -331,7 +331,7 @@ class SQLEnvironment(Environment):
         self._task_id    = task_id
         self._attempt    = 0
         self._max_att    = _MAX_ATTEMPTS[task_id]
-        self._best_score = 0.0
+        self._best_score = 0.02
         self._state      = SQLState(
             episode_id=str(uuid.uuid4()), step_count=0,
             db_id=self._task["db_id"], task_id=task_id,
