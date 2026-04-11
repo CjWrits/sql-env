@@ -331,12 +331,29 @@ class SQLEnvironment(Environment):
         _ensure_tasks_loaded()
         if task_id not in _TASKS or not _TASKS[task_id]:
             task_id = "easy"
-
-        rng = random.Random(seed)
-        self._task       = rng.choice(_TASKS[task_id])
-        self._task_id    = task_id
+        
+        # Fallback if no tasks available
+        if not _TASKS.get(task_id):
+            for fallback in ["easy", "medium", "hard"]:
+                if _TASKS.get(fallback):
+                    task_id = fallback
+                    break
+        
+        # If still no tasks, create a minimal dummy task
+        if not _TASKS.get(task_id):
+            self._task = {
+                "db_id": "department_management",
+                "question": "How many departments are there?",
+                "gold_query": "SELECT count(*) FROM department"
+            }
+            self._task_id = task_id
+        else:
+            rng = random.Random(seed)
+            self._task = rng.choice(_TASKS[task_id])
+            self._task_id = task_id
+        
         self._attempt    = 0
-        self._max_att    = _MAX_ATTEMPTS[task_id]
+        self._max_att    = _MAX_ATTEMPTS.get(task_id, 3)
         self._best_score = 0.02
         self._state      = SQLState(
             episode_id=str(uuid.uuid4()), step_count=0,
