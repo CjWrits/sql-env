@@ -1,5 +1,6 @@
 """SQL Query Environment Client."""
 
+import math
 from typing import Dict
 from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
@@ -7,6 +8,16 @@ try:
     from .models import SQLAction, SQLObservation, SQLState
 except ImportError:
     from models import SQLAction, SQLObservation, SQLState
+
+
+def safe_score(score) -> float:
+    try:
+        score = float(score)
+        if math.isnan(score) or math.isinf(score):
+            return 0.02
+    except (TypeError, ValueError):
+        return 0.02
+    return max(0.02, min(score, 0.95))
 
 
 class SQLEnv(EnvClient[SQLAction, SQLObservation, SQLState]):
@@ -28,6 +39,7 @@ class SQLEnv(EnvClient[SQLAction, SQLObservation, SQLState]):
 
     def _parse_result(self, payload: Dict) -> StepResult[SQLObservation]:
         obs = payload.get("observation", {})
+        reward = safe_score(payload.get("reward"))
         observation = SQLObservation(
             question=obs.get("question", ""),
             db_id=obs.get("db_id", ""),
@@ -39,11 +51,11 @@ class SQLEnv(EnvClient[SQLAction, SQLObservation, SQLState]):
             last_error=obs.get("last_error"),
             feedback=obs.get("feedback"),
             done=payload.get("done", False),
-            reward=payload.get("reward"),
+            reward=reward,
         )
         return StepResult(
             observation=observation,
-            reward=payload.get("reward"),
+            reward=reward,
             done=payload.get("done", False),
         )
 

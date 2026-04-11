@@ -386,7 +386,10 @@ class SQLEnvironment(Environment):
         return self._state
 
     def get_grader_score(self) -> float:
-        return safe_score(self._best_score)
+        score = safe_score(self._best_score)
+        if not (0 < score < 1):
+            return 0.5
+        return score
 
     def get_tasks(self) -> List[Dict]:
         _ensure_tasks_loaded()
@@ -414,6 +417,7 @@ class SQLEnvironment(Environment):
         last_error:   Optional[str] = None,
         feedback:     Optional[str] = None,
     ) -> SQLObservation:
+        reward = safe_score(reward)
         return SQLObservation(
             question=self._task.get("question", ""),
             db_id=self._task.get("db_id", ""),
