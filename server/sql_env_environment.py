@@ -37,36 +37,60 @@ def safe_score(score) -> float:
     return max(0.02, min(score, 0.95))
 
 
+def _get_fallback_tasks() -> Dict[str, List[Dict]]:
+    """Fallback tasks if Spider dataset fails to load."""
+    return {
+        "easy": [
+            {"db_id": "department_management", "question": "How many departments are there?", "gold_query": "SELECT count(*) FROM department"},
+            {"db_id": "department_management", "question": "List all department names.", "gold_query": "SELECT Name FROM department"},
+            {"db_id": "allergy_1", "question": "How many students are there?", "gold_query": "SELECT count(*) FROM Student"},
+        ],
+        "medium": [
+            {"db_id": "department_management", "question": "Show the name and age of all heads of departments.", "gold_query": "SELECT T2.name, T2.age FROM management AS T1 JOIN head AS T2 ON T1.head_ID = T2.head_ID"},
+            {"db_id": "university_basketball", "question": "Show school names and team names.", "gold_query": "SELECT T1.School, T2.Team_Name FROM university AS T1 JOIN basketball_match AS T2 ON T1.School_ID = T2.School_ID"},
+        ],
+        "hard": [
+            {"db_id": "department_management", "question": "Show department names with more than 1 head.", "gold_query": "SELECT T1.Name FROM department AS T1 JOIN management AS T2 ON T1.Department_ID = T2.department_ID GROUP BY T1.Name HAVING count(*) > 1"},
+            {"db_id": "allergy_1", "question": "Find students who have both Cat and Milk allergies.", "gold_query": "SELECT StuID FROM Has_Allergy WHERE Allergy = 'Cat' INTERSECT SELECT StuID FROM Has_Allergy WHERE Allergy = 'Milk'"},
+        ]
+    }
+
+
 # ---------------------------------------------------------------------------
 # Spider dataset — loaded once at startup
 # ---------------------------------------------------------------------------
 
 def _load_and_split() -> Dict[str, List[Dict]]:
-    from datasets import load_dataset
-    ds = load_dataset("spider", split="train")
-    buckets: Dict[str, List[Dict]] = {"easy": [], "medium": [], "hard": []}
-    for row in ds:
-        q = row["query"].upper()
-        question = row["question"].strip()
-        query = row["query"].strip()
-        if not question or not query or "SELECT" not in q:
-            continue
-        has_subquery = q.count("SELECT") > 1
-        has_having   = "HAVING" in q
-        has_set_op   = any(k in q for k in ("UNION", "INTERSECT", "EXCEPT"))
-        has_join     = "JOIN" in q
-        if has_subquery or has_having or has_set_op:
-            diff = "hard"
-        elif has_join:
-            diff = "medium"
-        else:
-            diff = "easy"
-        buckets[diff].append({
-            "db_id": row["db_id"],
-            "question": question,
-            "gold_query": query,
-        })
-    return buckets
+    try:
+        from datasets import load_dataset
+        ds = load_dataset("spider", split="train")
+        buckets: Dict[str, List[Dict]] = {"easy": [], "medium": [], "hard": []}
+        for row in ds:
+            q = row["query"].upper()
+            question = row["question"].strip()
+            query = row["query"].strip()
+            if not question or not query or "SELECT" not in q:
+                continue
+            has_subquery = q.count("SELECT") > 1
+            has_having   = "HAVING" in q
+            has_set_op   = any(k in q for k in ("UNION", "INTERSECT", "EXCEPT"))
+            has_join     = "JOIN" in q
+            if has_subquery or has_having or has_set_op:
+                diff = "hard"
+            elif has_join:
+                diff = "medium"
+            else:
+                diff = "easy"
+            buckets[diff].append({
+                "db_id": row["db_id"],
+                "question": question,
+                "gold_query": query,
+            })
+        return buckets
+    except Exception as e:
+        print(f"Failed to load Spider dataset: {e}")
+        print("Using fallback tasks...")
+        return _get_fallback_tasks()
 
 
 _ALL_TASKS: Dict[str, List[Dict]] = {}  # populated lazily on first use
@@ -186,10 +210,17 @@ def _ensure_tasks_loaded() -> None:
     if _TASKS:
         return
     print("Loading Spider dataset...")
-    all_tasks = _load_and_split()
-    for diff, tasks in all_tasks.items():
-        _TASKS[diff] = [t for t in tasks if t["db_id"] in _KNOWN_DBS]
-    print(f"Loaded: easy={len(_TASKS['easy'])}, medium={len(_TASKS['medium'])}, hard={len(_TASKS['hard'])}")
+    try:
+        all_tasks = _load_and_split()
+        for diff, tasks in all_tasks.items():
+            _TASKS[diff] = [t for t in tasks if t["db_id"] in _KNOWN_DBS]
+        print(f"Loaded: easy={len(_TASKS['easy'])}, medium={len(_TASKS['medium'])}, hard={len(_TASKS['hard'])}")
+    except Exception as e:
+        print(f"Error loading tasks: {e}")
+        print("Using fallback tasks...")
+        fallback = _get_fallback_tasks()
+        for diff in ["easy", "medium", "hard"]:
+            _TASKS[diff] = fallback.get(diff, [])
 
 # Schema strings shown to the agent (CREATE TABLE only, no INSERT noise)
 _SCHEMA_DISPLAY: Dict[str, str] = {
