@@ -42,10 +42,10 @@ def safe_score(score) -> float:
     try:
         score = float(score)
         if math.isnan(score) or math.isinf(score):
-            return 0.02
+            return 0.5
     except (TypeError, ValueError):
-        return 0.02
-    return max(0.02, min(score, 0.95))
+        return 0.5
+    return max(0.01, min(0.99, score))
 
 SYSTEM_PROMPT = (
     "You are an expert SQL writer. Given a database schema and a natural language "
@@ -81,10 +81,12 @@ def log_step(step: int, action: str, reward: float, done: bool, error: Optional[
     )
 
 
-def log_end(success: bool, steps: int, rewards: List[float]) -> None:
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    # Clamp score to valid range
+    final_score = max(0.01, min(0.99, float(score)))
     print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} steps={steps} score={final_score:.2f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -205,7 +207,10 @@ def run_task(llm: OpenAI, env, task_id: str) -> float:
         # Ensure rewards list is never empty
         if not rewards:
             rewards = [safe_score(0.02)]
-        log_end(success=success, steps=steps_taken, rewards=rewards)
+        
+        # Clamp final_score before logging
+        final_score = max(0.01, min(0.99, float(final_score)))
+        log_end(success=success, steps=steps_taken, score=final_score, rewards=rewards)
 
     return safe_score(final_score)
 

@@ -28,9 +28,12 @@ tasks:
   - id: easy
     difficulty: easy
     description: Single table SELECT with WHERE / ORDER BY / COUNT
+    grader: graders.easy:EasyGrader
   - id: medium
     difficulty: medium
     description: Two-table JOIN query
+    grader: graders.medium:MediumGrader
   - id: hard
     difficulty: hard
     description: Subquery, GROUP BY + HAVING, or UNION
+    grader: graders.hard:HardGrader
