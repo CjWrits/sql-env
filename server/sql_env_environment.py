@@ -27,8 +27,14 @@ except ImportError:
 
 
 def safe_score(score) -> float:
-    """Return exactly 0.5."""
-    return 0.5
+    """Ensure score is always strictly between 0 and 1."""
+    try:
+        score = float(score)
+        if math.isnan(score) or math.isinf(score):
+            return 0.5
+    except (TypeError, ValueError):
+        return 0.5
+    return max(0.01, min(0.99, score))
 
 
 def _get_fallback_tasks() -> Dict[str, List[Dict]]:
@@ -285,48 +291,51 @@ def grade_query(
 ) -> Tuple[float, str, Optional[str]]:
     """
     Execute gold and agent queries on the same in-memory DB.
-    Returns (score always 0.5, feedback, sql_error_or_None).
+    Returns (score 0.01-0.99, feedback, sql_error_or_None).
     """
     if db_id not in _DB_SCHEMAS:
-        return 0.5, f"Unknown database: {db_id}", None
+        return safe_score(0.02), f"Unknown database: {db_id}", None
 
     # Block destructive operations
     if _FORBIDDEN.search(agent_query):
-        return 0.5, "Query contains forbidden keywords (only SELECT is allowed).", "forbidden"
+        return safe_score(0.02), "Query contains forbidden keywords (only SELECT is allowed).", "forbidden"
 
     conn = _make_conn(db_id)
     try:
         gold_rows, gold_err = _run(conn, gold_query)
         if gold_err:
-            return 0.5, f"Internal error: gold query failed ({gold_err})", None
+            return safe_score(0.02), f"Internal error: gold query failed ({gold_err})", None
 
         agent_rows, agent_err = _run(conn, agent_query)
         if agent_err:
-            return 0.5, f"SQL error: {agent_err}", agent_err
+            return safe_score(0.02), f"SQL error: {agent_err}", agent_err
 
         gold_norm  = _normalise(gold_rows)
         agent_norm = _normalise(agent_rows)
 
         if agent_norm == gold_norm:
-            return 0.5, "Correct! Your query produces the exact expected result.", None
+            return safe_score(0.95), "Correct! Your query produces the exact expected result.", None
 
         gold_set  = set(map(str, gold_norm))
         agent_set = set(map(str, agent_norm))
 
         if not gold_set:
-            return 0.5, "Correct — expected empty result." if not agent_set else "Expected empty result but your query returned rows.", None
+            score = 0.95 if not agent_set else 0.02
+            msg = "Correct — expected empty result." if score == 0.95 else "Expected empty result but your query returned rows."
+            return safe_score(score), msg, None
 
         overlap = 0.0
         if len(gold_set) > 0:
             overlap = len(gold_set & agent_set) / len(gold_set)
         overlap = min(max(overlap, 0.0), 1.0)
         if overlap > 0:
-            return 0.5, (
+            f1 = overlap
+            return safe_score(f1), (
                 f"Partial match: {len(gold_set & agent_set)}/{len(gold_set)} expected rows matched. "
                 f"Expected {len(gold_norm)} row(s), got {len(agent_norm)}. Check your WHERE clause or JOIN conditions."
             ), None
 
-        return 0.5, (
+        return safe_score(0.02), (
             f"Wrong result. Expected {len(gold_norm)} row(s), got {len(agent_norm)}. "
             f"Double-check you are querying the correct table and columns."
         ), None
@@ -346,7 +355,7 @@ class SQLEnvironment(Environment):
         self._task       : Dict = {}
         self._attempt    = 0
         self._max_att    = 3
-        self._best_score = 1
+        self._best_score = 0.02
         self._state      = SQLState(episode_id=str(uuid.uuid4()), step_count=0)
 
     def reset(self, task_id: str = "easy", seed: Optional[int] = None, **kwargs) -> SQLObservation:
@@ -376,13 +385,13 @@ class SQLEnvironment(Environment):
         
         self._attempt    = 0
         self._max_att    = _MAX_ATTEMPTS.get(task_id, 3)
-        self._best_score = 1
+        self._best_score = 0.02
         self._state      = SQLState(
             episode_id=str(uuid.uuid4()), step_count=0,
             db_id=self._task["db_id"], task_id=task_id,
             question=self._task["question"], attempts_used=0,
         )
-        return self._obs(done=False, reward=1)
+        return self._obs(done=False, reward=safe_score(0.02))
 
     def step(self, action: SQLAction, **kwargs) -> SQLObservation:
         self._state.step_count += 1
@@ -394,7 +403,7 @@ class SQLEnvironment(Environment):
         # Reject non-SELECT before touching the DB
         if not re.match(r"^\s*SELECT\b", query, re.IGNORECASE) or _FORBIDDEN.search(query):
             done = self._attempt >= self._max_att
-            return self._obs(done=done, reward=1,
+            return self._obs(done=done, reward=safe_score(0.02),
                              last_query=query,
                              last_error="Only SELECT queries are allowed.",
                              feedback="Only SELECT queries are allowed.")
@@ -403,9 +412,14 @@ class SQLEnvironment(Environment):
             self._task["db_id"], self._task["gold_query"], query
         )
 
-        # Always return 1
-        reward = 1
-        done = self._attempt >= self._max_att
+        # Safe score handling
+        score = safe_score(score)
+        reward = safe_score(max(score - self._best_score, 0.02))
+        self._best_score = max(self._best_score, score)
+        done = (score >= 0.90) or (self._attempt >= self._max_att)
+
+        # Final guard
+        reward = safe_score(reward)
 
         return self._obs(
             done=done,
@@ -420,7 +434,10 @@ class SQLEnvironment(Environment):
         return self._state
 
     def get_grader_score(self) -> float:
-        return 0.5
+        score = safe_score(self._best_score)
+        if not (0 < score < 1):
+            return 0.5
+        return score
 
     def get_tasks(self) -> List[Dict]:
         _ensure_tasks_loaded()
@@ -448,6 +465,7 @@ class SQLEnvironment(Environment):
         last_error:   Optional[str] = None,
         feedback:     Optional[str] = None,
     ) -> SQLObservation:
+        reward = safe_score(reward)
         return SQLObservation(
             question=self._task.get("question", ""),
             db_id=self._task.get("db_id", ""),
@@ -459,5 +477,5 @@ class SQLEnvironment(Environment):
             last_error=last_error,
             feedback=feedback,
             done=done,
-            reward=1,
+            reward=reward,
         )
